@@ -1,3 +1,4 @@
+
 import os
 import json
 import warnings
@@ -51,6 +52,20 @@ class GradientLoss(nn.Module):
         return F.l1_loss(grad_x, grad_y)
 
 
+class UWColorConstantLoss(nn.Module):
+    def __init__(self):
+        super(UWColorConstantLoss, self).__init__()
+
+    def forward(self, image):
+        # image: (B, C, H, W)
+        means = image.mean(dim=[2, 3])  # (B, C)
+        loss = 0.0
+        for i in range(3):
+            for j in range(i + 1, 3):
+                loss += ((means[:, i] - means[:, j]) ** 2).mean()
+        return loss
+
+
 class CompositeLoss(nn.Module):
     def __init__(self):
         super(CompositeLoss, self).__init__()
@@ -58,12 +73,14 @@ class CompositeLoss(nn.Module):
         self.perceptual = VGGPerceptualLoss()
         self.grad = GradientLoss()
         self.ms_ssim = lambda x, y: 1 - ms_ssim(x, y, data_range=1.0, size_average=True)
+        self.color_const = UWColorConstantLoss()
 
         self.weights = {
-            "Charbonnier": 0.23981772,
-            "Perceptual": 0.39280418,
-            "Gradient": 0.21069974,
-            "MS-SSIM": 0.15667835
+            "Charbonnier": 0.2741,
+            "Perceptual": 0.1680,
+            "Gradient": 0.2222,
+            "MS-SSIM": 0.3357,
+            "ColorConstancy": 0.1500
         }
 
     def forward(self, pred, target):
@@ -71,14 +88,17 @@ class CompositeLoss(nn.Module):
         l_perc = self.perceptual(pred, target)
         l_grad = self.grad(pred, target)
         l_ssim = self.ms_ssim(pred, target)
+        l_color = self.color_const(pred)
 
         total = (
             self.weights["Charbonnier"] * l_charb +
             self.weights["Perceptual"] * l_perc +
             self.weights["Gradient"] * l_grad +
-            self.weights["MS-SSIM"] * l_ssim
+            self.weights["MS-SSIM"] * l_ssim +
+            self.weights["ColorConstancy"] * l_color
         )
         return total
+
 
 # === Training ===
 
@@ -131,7 +151,7 @@ def train():
     model, optimizer_b, scheduler_b = accelerator.prepare(model, optimizer_b, scheduler_b)
 
     size = len(testloader)
-    early_stopping_patience = 15
+    early_stopping_patience = 50
     epochs_no_improve = 0
 
     for epoch in range(start_epoch, opt.OPTIM.NUM_EPOCHS + 1):
@@ -213,7 +233,3 @@ def train():
                     f.write(json.dumps(log_stats) + '\n')
 
     accelerator.end_training()
-
-
-if __name__ == '__main__':
-    train()
