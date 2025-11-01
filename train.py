@@ -233,3 +233,6 @@ def train():
                     f.write(json.dumps(log_stats) + '\n')
 
     accelerator.end_training()
+
+if __name__ == '__main__':
+    train()
