@@ -245,6 +245,8 @@ class DataReader(Dataset):
                 label = 1
             elif 'lsui' in filename:
                 label = 2
+            else:
+                label=3
 
             labels.append(label)
 
